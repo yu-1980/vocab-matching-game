@@ -35,7 +35,7 @@ export default function VocabMatchingGame() {
     setMessageType('success');
   };
 
-  // 提交完成状态到Supabase
+  // 提交完成状态到Supabase（优化：去掉onConflict，改用先删后插，避免约束报错）
   const submitCompletion = async () => {
     if (!studentName || !studentId) {
       setMessage('姓名和学号不能为空！');
@@ -50,10 +50,17 @@ export default function VocabMatchingGame() {
     }
 
     try {
+      // 先删除该学生的原有记录（避免重复提交）
+      await supabase
+        .from('student_answers')
+        .delete()
+        .eq('student_id', studentId)
+        .eq('exercise_id', 'vocab-matching-game');
+
       // 存储学生完成状态
       const { error } = await supabase
         .from('student_answers')
-        .upsert([
+        .insert([
           {
             student_name: studentName,
             student_id: studentId,
@@ -61,7 +68,7 @@ export default function VocabMatchingGame() {
             score: 100, // 游戏类统一记满分
             completed: true
           }
-        ], { onConflict: ['student_id', 'exercise_id'] });
+        ]);
 
       if (error) throw error;
 
@@ -106,7 +113,7 @@ export default function VocabMatchingGame() {
           </div>
         </div>
 
-        {/* 原扣子网页的游戏内容（完整保留样式） */}
+        {/* 原扣子网页的游戏内容（补充词汇卡片，解决空白问题） */}
         <div className="flex flex-col items-center justify-center min-h-[600px] bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-12">
           <h1 className="text-5xl font-bold mb-8 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">词汇连连看</h1>
           
@@ -116,8 +123,35 @@ export default function VocabMatchingGame() {
               通过配对图片和单词，轻松学习英语单词。
             </p>
           ) : (
-            <div className="text-xl text-gray-600 dark:text-gray-300 mb-12 text-center">
-              <p>🎉 游戏已开始！完成所有词汇配对后点击下方按钮标记完成</p>
+            // 替换核心：新增词汇卡片内容，解决空白问题
+            <div className="w-full max-w-3xl mb-12">
+              <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 text-center">
+                🎉 游戏已开始！完成所有词汇配对后点击下方按钮标记完成
+              </p>
+              {/* 词汇连连看游戏卡片（可自定义单词） */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                {[
+                  { word: 'apple', cn: '苹果', matched: false },
+                  { word: 'banana', cn: '香蕉', matched: false },
+                  { word: 'cat', cn: '猫', matched: false },
+                  { word: 'dog', cn: '狗', matched: false },
+                  { word: 'book', cn: '书', matched: false },
+                  { word: 'pen', cn: '笔', matched: false },
+                  { word: 'desk', cn: '桌子', matched: false },
+                  { word: 'chair', cn: '椅子', matched: false },
+                ].map((item, index) => (
+                  <div 
+                    key={index}
+                    className="bg-white dark:bg-gray-700 rounded-xl shadow-md p-4 text-center cursor-pointer hover:scale-105 transition-transform"
+                  >
+                    <p className="text-lg font-medium text-blue-600 dark:text-blue-400">{item.word}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-300 mt-2">{item.cn}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 text-center">
+                玩法：记住单词和中文意思，后续会随机打乱让你配对（简易版演示）
+              </p>
               <button
                 onClick={completeGame}
                 className="mt-8 inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium h-10 text-xl px-12 py-6 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-white disabled:opacity-50 disabled:pointer-events-none"
