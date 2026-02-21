@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// 初始化Supabase客户端
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
 export default function VocabMatchingGame() {
-  // 学生信息状态
   const [studentName, setStudentName] = useState('');
   const [studentId, setStudentId] = useState('');
   const [gameStarted, setGameStarted] = useState(false);
@@ -16,6 +14,49 @@ export default function VocabMatchingGame() {
   const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
+
+  // 游戏状态
+  const [firstCard, setFirstCard] = useState(null);
+  const [matchedPairs, setMatchedPairs] = useState([]);
+  const [disabled, setDisabled] = useState(false);
+
+  // 单词数据（英文 + 中文）
+  const wordPairs = [
+    { id: 1, word: 'apple', type: 'word', pairId: 1 },
+    { id: 2, word: '苹果', type: 'cn', pairId: 1 },
+    { id: 3, word: 'banana', type: 'word', pairId: 2 },
+    { id: 4, word: '香蕉', type: 'cn', pairId: 2 },
+    { id: 5, word: 'cat', type: 'word', pairId: 3 },
+    { id: 6, word: '猫', type: 'cn', pairId: 3 },
+    { id: 7, word: 'dog', type: 'word', pairId: 4 },
+    { id: 8, word: '狗', type: 'cn', pairId: 4 },
+  ];
+
+  // 打乱顺序
+  const shuffleCards = (array) => {
+    return [...array].sort(() => Math.random() - 0.5);
+  };
+
+  const [cards, setCards] = useState(shuffleCards(wordPairs));
+
+  // 点击卡片
+  const handleCardClick = (card) => {
+    if (disabled || matchedPairs.includes(card.id)) return;
+
+    if (!firstCard) {
+      setFirstCard(card);
+    } else {
+      // 判断是否配对成功
+      if (firstCard.pairId === card.pairId && firstCard.id !== card.id) {
+        setMatchedPairs([...matchedPairs, firstCard.id, card.id]);
+        setFirstCard(null);
+      } else {
+        setDisabled(true);
+        setTimeout(() => setDisabled(false), 600);
+        setFirstCard(null);
+      }
+    }
+  };
 
   // 开始游戏
   const startGame = () => {
@@ -28,51 +69,45 @@ export default function VocabMatchingGame() {
     setMessage('');
   };
 
-  // 标记游戏完成
+  // 完成游戏
   const completeGame = () => {
     setGameCompleted(true);
-    setMessage('游戏完成！请点击提交按钮记录完成状态');
+    setMessage('游戏完成！点击提交记录成绩');
     setMessageType('success');
   };
 
-  // 提交完成状态到Supabase（优化：去掉onConflict，改用先删后插，避免约束报错）
+  // 提交
   const submitCompletion = async () => {
     if (!studentName || !studentId) {
       setMessage('姓名和学号不能为空！');
       setMessageType('error');
       return;
     }
-
     if (!gameCompleted) {
-      setMessage('请先完成游戏再提交！');
+      setMessage('请先完成游戏！');
       setMessageType('error');
       return;
     }
 
     try {
-      // 先删除该学生的原有记录（避免重复提交）
       await supabase
         .from('student_answers')
         .delete()
         .eq('student_id', studentId)
         .eq('exercise_id', 'vocab-matching-game');
 
-      // 存储学生完成状态
-      const { error } = await supabase
-        .from('student_answers')
-        .insert([
-          {
-            student_name: studentName,
-            student_id: studentId,
-            exercise_id: 'vocab-matching-game', // 词汇连连看游戏ID
-            score: 100, // 游戏类统一记满分
-            completed: true
-          }
-        ]);
+      const { error } = await supabase.from('student_answers').insert([
+        {
+          student_name: studentName,
+          student_id: studentId,
+          exercise_id: 'vocab-matching-game',
+          score: 100,
+          completed: true,
+        },
+      ]);
 
       if (error) throw error;
-
-      setMessage('提交成功！你已完成词汇连连看游戏');
+      setMessage('提交成功！');
       setMessageType('success');
       setSubmitted(true);
     } catch (err) {
@@ -81,118 +116,100 @@ export default function VocabMatchingGame() {
     }
   };
 
+  // 判断游戏是否全部完成
+  const allMatched = matchedPairs.length === wordPairs.length;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900 dark:to-blue-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
-        {/* 学生信息填写区（新增） */}
-        <div className="mb-8 p-6 bg-white/80 dark:bg-gray-800/80 rounded-2xl shadow-lg">
-          <h3 className="text-2xl font-semibold mb-4 text-gray-800 dark:text-white">学生信息</h3>
+        <div className="mb-8 p-6 bg-white/90 rounded-2xl shadow-lg">
+          <h3 className="text-2xl font-semibold mb-4">学生信息</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-gray-700 dark:text-gray-300 mb-2">姓名：</label>
+              <label className="block mb-2">姓名</label>
               <input
-                type="text"
                 value={studentName}
                 onChange={(e) => setStudentName(e.target.value)}
-                placeholder="请输入你的姓名"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-700"
+                className="w-full px-4 py-2 border rounded-lg"
                 disabled={submitted}
               />
             </div>
             <div>
-              <label className="block text-gray-700 dark:text-gray-300 mb-2">学号：</label>
+              <label className="block mb-2">学号</label>
               <input
-                type="text"
                 value={studentId}
                 onChange={(e) => setStudentId(e.target.value)}
-                placeholder="请输入你的学号（如：2024001）"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-700"
+                className="w-full px-4 py-2 border rounded-lg"
                 disabled={submitted}
               />
             </div>
           </div>
         </div>
 
-        {/* 原扣子网页的游戏内容（补充词汇卡片，解决空白问题） */}
-        <div className="flex flex-col items-center justify-center min-h-[600px] bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-12">
-          <h1 className="text-5xl font-bold mb-8 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">词汇连连看</h1>
-          
+        <div className="flex flex-col items-center bg-white rounded-3xl shadow-2xl p-12">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-pink-600 bg-clip-text text-transparent mb-6">
+            词汇连连看
+          </h1>
+
           {!gameStarted ? (
-            <p className="text-xl text-gray-600 dark:text-gray-300 mb-12 text-center">
-              欢迎来到英语词汇学习游戏！<br />
-              通过配对图片和单词，轻松学习英语单词。
+            <p className="text-lg text-gray-600 mb-8 text-center">
+              把英文和中文配对，轻松记单词！
             </p>
           ) : (
-            // 替换核心：新增词汇卡片内容，解决空白问题
-            <div className="w-full max-w-3xl mb-12">
-              <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 text-center">
-                🎉 游戏已开始！完成所有词汇配对后点击下方按钮标记完成
+            <div className="w-full mb-8">
+              <p className="text-center mb-4">
+                已完成配对：{matchedPairs.length / 2}/{wordPairs.length / 2}
               </p>
-              {/* 词汇连连看游戏卡片（可自定义单词） */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                {[
-                  { word: 'apple', cn: '苹果', matched: false },
-                  { word: 'banana', cn: '香蕉', matched: false },
-                  { word: 'cat', cn: '猫', matched: false },
-                  { word: 'dog', cn: '狗', matched: false },
-                  { word: 'book', cn: '书', matched: false },
-                  { word: 'pen', cn: '笔', matched: false },
-                  { word: 'desk', cn: '桌子', matched: false },
-                  { word: 'chair', cn: '椅子', matched: false },
-                ].map((item, index) => (
-                  <div 
-                    key={index}
-                    className="bg-white dark:bg-gray-700 rounded-xl shadow-md p-4 text-center cursor-pointer hover:scale-105 transition-transform"
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {cards.map((card) => (
+                  <div
+                    key={card.id}
+                    onClick={() => handleCardClick(card)}
+                    className={`p-5 rounded-xl text-center transition-all cursor-pointer border-2 
+                    ${matchedPairs.includes(card.id)
+                      ? 'bg-green-100 border-green-400'
+                      : firstCard === card
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-300 hover:border-blue-400'
+                    }`}
                   >
-                    <p className="text-lg font-medium text-blue-600 dark:text-blue-400">{item.word}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-300 mt-2">{item.cn}</p>
+                    <p className="text-lg font-medium">{card.word}</p>
                   </div>
                 ))}
               </div>
-              <p className="text-gray-500 dark:text-gray-400 text-center">
-                玩法：记住单词和中文意思，后续会随机打乱让你配对（简易版演示）
-              </p>
-              <button
-                onClick={completeGame}
-                className="mt-8 inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium h-10 text-xl px-12 py-6 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-white disabled:opacity-50 disabled:pointer-events-none"
-                disabled={gameCompleted || submitted}
-              >
-                我已完成游戏
-              </button>
+
+              {allMatched && !gameCompleted && (
+                <button
+                  onClick={completeGame}
+                  className="mt-6 px-8 py-3 bg-green-500 text-white rounded-full shadow-lg w-full"
+                >
+                  ✅ 全部配对成功！我完成了
+                </button>
+              )}
             </div>
           )}
 
-          {/* 游戏控制按钮 */}
           {!gameStarted && (
             <button
               onClick={startGame}
-              className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium h-10 text-xl px-12 py-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-white disabled:opacity-50 disabled:pointer-events-none"
-              disabled={submitted}
+              className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full text-lg"
             >
               开始游戏
             </button>
           )}
 
-          {/* 提交完成状态按钮 */}
           {gameCompleted && !submitted && (
             <button
               onClick={submitCompletion}
-              className="mt-8 inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium h-10 text-xl px-12 py-6 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 text-white"
-              disabled={submitted}
+              className="px-8 py-4 bg-pink-500 text-white rounded-full"
             >
               提交完成状态
             </button>
           )}
 
-          {/* 提示信息 */}
           {message && (
-            <div 
-              className={`mt-8 p-4 rounded-lg ${
-                messageType === 'success' 
-                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' 
-                  : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-              }`}
-            >
+            <div className={`mt-4 p-3 rounded ${messageType === 'success' ? 'bg-green-100' : 'bg-red-100'}`}>
               {message}
             </div>
           )}
